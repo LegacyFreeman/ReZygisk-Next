@@ -95,3 +95,31 @@ jobs:
         with:
           name: ${{ steps.prepareArtifact.outputs.debugName }}
           path: ./zksu-debug/*
+
+      - name: Notify in Telegram with download buttons
+        if: always()
+        run: |
+          status="${{ job.status }}"
+          commit=$(echo "${{ github.sha }}" | cut -c1-7)
+          actor="${{ github.actor }}"
+          build_variant="${{ github.event.inputs.variant }}"
+          build_url="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          releaseName="${{ steps.prepareArtifact.outputs.releaseName }}"
+          debugName="${{ steps.prepareArtifact.outputs.debugName }}"
+
+          json_payload='{
+            "chat_id": "'"${{ secrets.TELEGRAM_CHAT_ID }}"'",
+            "text": "⚙️ *ReZygisk Build Completed*\n📦 *Variant*: '"$build_variant"'\n👤 *By*: '"$actor"'\n🔗 [View Build Logs]('"$build_url"')",
+            "parse_mode": "Markdown",
+            "reply_markup": {
+              "inline_keyboard": [
+                '"$( [ "$releaseName" ] && echo "[{\"text\":\"⬇️ Release ZIP\",\"url\":\"$build_url\"}]," )"'
+                '"$( [ "$debugName" ] && echo "[{\"text\":\"🐞 Debug ZIP\",\"url\":\"$build_url\"}]" )"'
+              ]
+            }
+          }'
+
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "$json_payload"    
