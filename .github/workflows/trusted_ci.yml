@@ -94,7 +94,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.prepareArtifact.outputs.releaseName }}
-          name: ReZygisk ${{ steps.prepareArtifact.outputs.releaseName }}
+          name: ${{ steps.prepareArtifact.outputs.releaseName }}
           files: module/build/outputs/release/ReZygisk-v*-release.zip
           draft: false
           prerelease: false
