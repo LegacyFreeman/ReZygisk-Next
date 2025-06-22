@@ -88,7 +88,19 @@ jobs:
         with:
           name: ${{ steps.prepareArtifact.outputs.releaseName }}
           path: ./zksu-release/*
-        
+
+      - name: Publish GitHub Release
+        if: ${{ github.event.inputs.variant != 'debug' && steps.prepareArtifact.outputs.releaseName }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.prepareArtifact.outputs.releaseName }}
+          name: ReZygisk ${{ steps.prepareArtifact.outputs.releaseName }}
+          files: module/build/outputs/release/ReZygisk-v*-release.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Upload debug
         if: ${{ github.event.inputs.variant != 'release' }}
         uses: actions/upload-artifact@v4
