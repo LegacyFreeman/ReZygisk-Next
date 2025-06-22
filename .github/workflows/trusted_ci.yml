@@ -52,8 +52,16 @@ jobs:
           echo 'org.gradle.vfs.watch=true' >> gradle.properties
           echo 'org.gradle.jvmargs=-Xmx2048m' >> gradle.properties
           sed -i 's/org.gradle.unsafe.configuration-cache=true//g' gradle.properties
-          ./gradlew zipRelease
-          ./gradlew zipDebug
+
+          bash <<'EOF'
+          if [ "${{ github.event.inputs.variant }}" == "release" ]; then
+            ./gradlew zipRelease
+          elif [ "${{ github.event.inputs.variant }}" == "debug" ]; then
+            ./gradlew zipDebug
+          else
+            ./gradlew zipRelease zipDebug
+          fi
+          EOF
 
       - name: Prepare artifact
         if: success()
