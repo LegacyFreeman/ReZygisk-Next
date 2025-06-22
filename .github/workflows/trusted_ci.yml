@@ -3,7 +3,17 @@ name: Trusted CI
 on:
   push:
     branches: [ main ]
-    workflow_dispatch:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: 'Тип сборки'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - release
+          - debug
+          - both
 
 jobs:
   build:
