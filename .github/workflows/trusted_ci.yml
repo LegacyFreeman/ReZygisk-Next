@@ -22,7 +22,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: "recursive"
+          submodules: "true"
           fetch-depth: 0
 
       - name: Setup Java
@@ -73,15 +73,15 @@ jobs:
           unzip module/build/outputs/release/ReZygisk-v*-debug.zip -d zksu-debug
 
       - name: Upload release
-      if: ${{ github.event.inputs.variant != 'debug' }}
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ steps.prepareArtifact.outputs.releaseName }}
-        path: ./zksu-release/*
+        if: ${{ github.event.inputs.variant != 'debug' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.prepareArtifact.outputs.releaseName }}
+          path: ./zksu-release/*
         
       - name: Upload debug
-      if: ${{ github.event.inputs.variant != 'release' }}
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ steps.prepareArtifact.outputs.debugName }}
-        path: ./zksu-debug/*
+        if: ${{ github.event.inputs.variant != 'release' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.prepareArtifact.outputs.debugName }}
+          path: ./zksu-debug/*
