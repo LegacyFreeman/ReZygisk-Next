@@ -100,26 +100,48 @@ jobs:
         if: always()
         run: |
           status="${{ job.status }}"
-          commit=$(echo "${{ github.sha }}" | cut -c1-7)
           actor="${{ github.actor }}"
           build_variant="${{ github.event.inputs.variant }}"
           build_url="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-
           releaseName="${{ steps.prepareArtifact.outputs.releaseName }}"
           debugName="${{ steps.prepareArtifact.outputs.debugName }}"
 
-          json_payload='{
-            "chat_id": "'"${{ secrets.TELEGRAM_CHAT_ID }}"'",
-            "text": "⚙️ *ReZygisk Build Completed*\n📦 *Variant*: '"$build_variant"'\n👤 *By*: '"$actor"'\n🔗 [View Build Logs]('"$build_url"')",
-            "parse_mode": "Markdown",
-            "reply_markup": {
-              "inline_keyboard": [
-                '"$( [ "$releaseName" ] && echo "[{\"text\":\"⬇️ Release ZIP\",\"url\":\"$build_url\"}]," )"'
-                '"$( [ "$debugName" ] && echo "[{\"text\":\"🐞 Debug ZIP\",\"url\":\"$build_url\"}]" )"'
-              ]
-            }
-          }'
+          # Подготовка кнопок
+          buttons="[]"
+          button_items=""
 
+          if [ -n "$releaseName" ]; then
+            button_items='[{"text":"⬇️ Release ZIP","url":"'"$build_url"'"}]'
+          fi
+
+          if [ -n "$debugName" ]; then
+            if [ -n "$button_items" ]; then
+              button_items="$button_items,[{\"text\":\"🐞 Debug ZIP\",\"url\":\"$build_url\"}]"
+            else
+              button_items='[{"text":"🐞 Debug ZIP","url":"'"$build_url"'"}]'
+            fi
+          fi
+
+          if [ -n "$button_items" ]; then
+            buttons="[${button_items}]"
+          fi
+
+          # Собираем JSON через jq
+          json_payload=$(jq -n \
+            --arg chat_id "${{ secrets.TELEGRAM_CHAT_ID }}" \
+            --arg text "⚙️ *ReZygisk Build Completed*\n📦 *Variant*: $build_variant\n👤 *By*: $actor\n🔗 [View Logs]($build_url)" \
+            --argjson keyboard "$buttons" \
+            '{
+              chat_id: $chat_id,
+              text: $text,
+              parse_mode: "Markdown",
+              reply_markup: {
+                inline_keyboard: $keyboard
+              }
+            }'
+          )
+
+          echo "📬 Отправляю сообщение в Telegram..."
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -H "Content-Type: application/json" \
-            -d "$json_payload"    
+            -d "$json_payload"
