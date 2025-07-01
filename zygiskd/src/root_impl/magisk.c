@@ -28,7 +28,7 @@ char *magisk_managers[] = {
 #define DEBUG_RAMDISK_MAGISK lp_select("/debug_ramdisk/magisk32", "/debug_ramdisk/magisk64")
 #define BITLESS_DEBUG_RAMDISK_MAGISK "/debug_ramdisk/magisk"
 
-enum magisk_variants variant = Official;
+static enum magisk_variants variant = MOfficial;
 /* INFO: Longest path */
 static char path_to_magisk[sizeof(DEBUG_RAMDISK_MAGISK)] = { 0 };
 bool is_using_sulist = false;
@@ -74,7 +74,7 @@ void magisk_get_existence(struct root_impl_state *state) {
     return;
   }
 
-  state->variant = (uint8_t)Official;
+  state->variant = (uint8_t)MOfficial;
 
   for (unsigned long i = 0; i < sizeof(supported_variants) / sizeof(supported_variants[0]); i++) {
     if (strstr(magisk_info, supported_variants[i])) {

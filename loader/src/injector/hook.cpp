@@ -722,7 +722,48 @@ void ZygiskContext::run_modules_post() {
 void ZygiskContext::app_specialize_pre() {
     flags[APP_SPECIALIZE] = true;
 
-    info_flags = rezygiskd_get_process_flags(g_ctx->args.app->uid, (const char *const)process);
+    /* INFO: Isolated services have different UIDs than the main apps. Because
+               numerous root implementations base themselves in the UID of the
+               app, we need to ensure that the UID sent to ReZygiskd to search
+               is the app's and not the isolated service, or else it will be
+               able to bypass DenyList.
+
+             All apps, and isolated processes, of *third-party* applications will
+               have their app_data_dir set. The system applications might not have
+               one, however it is unlikely they will create an isolated process,
+               and even if so, it should not impact in detections, performance or
+               any area.
+    */
+    uid_t uid = args.app->uid;
+    if (IS_ISOLATED_SERVICE(uid) && args.app->app_data_dir) {
+        /* INFO: If the app is an isolated service, we use the UID of the
+                   app's process data directory, which is the UID of the
+                   app itself, which root implementations actually use.
+        */
+        const char *data_dir = env->GetStringUTFChars(args.app->app_data_dir, NULL);
+        if (!data_dir) {
+            LOGE("Failed to get app data directory");
+
+            return;
+        }
+
+        struct stat st;
+        if (stat(data_dir, &st) == -1) {
+            PLOGE("Failed to stat app data directory [%s]", data_dir);
+
+            env->ReleaseStringUTFChars(args.app->app_data_dir, data_dir);
+
+            return;
+        }
+
+        uid = st.st_uid;
+
+        LOGD("Isolated service being related to UID %d, app data dir: %s", uid, data_dir);
+
+        env->ReleaseStringUTFChars(args.app->app_data_dir, data_dir);
+    }
+
+    info_flags = rezygiskd_get_process_flags(uid, (const char *const)process);
      if (info_flags & PROCESS_IS_FIRST_STARTED) {
         /* INFO: To ensure we are really using a clean mount namespace, we use
                    the first process it as reference for clean mount namespace,
@@ -732,15 +773,18 @@ void ZygiskContext::app_specialize_pre() {
         update_mnt_ns(Clean, true);
     }
 
-    if ((info_flags & (PROCESS_IS_MANAGER | PROCESS_ROOT_IS_MAGISK)) == (PROCESS_IS_MANAGER | PROCESS_ROOT_IS_MAGISK)) {
+    if ((info_flags & PROCESS_IS_MANAGER) == PROCESS_IS_MANAGER) {
         LOGD("Manager process detected. Notifying that Zygisk has been enabled.");
 
         /* INFO: This environment variable is related to Magisk Zygisk/Manager. It
                    it used by Magisk's Zygisk to communicate to Magisk Manager whether
-                   Zygisk is working or not.
+                   Zygisk is working or not, allowing Zygisk modules to both work properly
+                   and for the manager to mark Zygisk as enabled.
 
-                 To allow Zygisk modules to both work properly and for the manager to
-                   identify Zygisk, being it not built-in, as working, we also set it. */
+                 However, to enhance capabilities of root managers, it is also set for
+                   any other supported manager, so that, if they wish, they can recognize
+                   if Zygisk is enabled.
+        */
         setenv("ZYGISK_ENABLED", "1", 1);
     } else {
         /* INFO: Because we load directly from the file, we need to do it before we umount
