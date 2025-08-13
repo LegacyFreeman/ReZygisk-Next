@@ -161,13 +161,15 @@ bool inject_on_main(int pid, const char *lib_path) {
 
     const char *libdl_path = NULL;
     const char *libc_path = NULL;
-    for (size_t i = 0; i < local_map->size; i++) {
-      if (local_map->maps[i].path == NULL) continue;
+    for (size_t i = 0; i < map->size; i++) {
+      if (map->maps[i].path == NULL) continue;
 
-      const char *filename = position_after(local_map->maps[i].path, '/');
+      const char *filename = position_after(map->maps[i].path, '/');
 
-      if (strcmp(filename, "libdl.so") == 0) {
-        libdl_path = local_map->maps[i].path;
+      if (!libdl_path && strcmp(filename, "libdl.so") == 0) {
+        libdl_path = map->maps[i].path;
+
+        LOGD("found libdl.so at %s", libdl_path);
 
         /* INFO: If we had found libc.so too, no need to continue searching */
         if (libc_path) break;
@@ -175,8 +177,10 @@ bool inject_on_main(int pid, const char *lib_path) {
         continue;
       }
 
-      if (strcmp(filename, "libc.so") == 0) {
-        libc_path = local_map->maps[i].path;
+      if (!libc_path && strcmp(filename, "libc.so") == 0) {
+        libc_path = map->maps[i].path;
+
+        LOGD("found libc.so at %s", libc_path);
 
         /* INFO: If we had found libdl.so too, no need to continue searching */
         if (libdl_path) break;
@@ -364,10 +368,8 @@ bool inject_on_main(int pid, const char *lib_path) {
     /* call injector entry(start_addr, block_size, path) */
     args[0] = (uintptr_t)start_addr;
     args[1] = block_size;
-    str = push_string(pid, &regs, rezygiskd_get_path());
-    args[2] = (uintptr_t)str;
 
-    remote_call(pid, &regs, injector_entry, (uintptr_t)libc_return_addr, args, 3);
+    remote_call(pid, &regs, injector_entry, (uintptr_t)libc_return_addr, args, 2);
 
     free(args);
 
