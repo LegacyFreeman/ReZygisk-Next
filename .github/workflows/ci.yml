@@ -1,4 +1,4 @@
-name: Untrusted CI
+name: ReZygisk-Next CI
 
 on:
   pull_request:
