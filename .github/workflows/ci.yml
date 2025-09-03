@@ -37,19 +37,71 @@ jobs:
         if: success()
         id: prepareArtifact
         run: |
-          releaseName=`ls module/build/outputs/release/ReZygisk-v*-release.zip | awk -F '(/|.zip)' '{print $5}'` && echo "releaseName=$releaseName" >> $GITHUB_OUTPUT
-          debugName=`ls module/build/outputs/release/ReZygisk-v*-debug.zip | awk -F '(/|.zip)' '{print $5}'` && echo "debugName=$debugName" >> $GITHUB_OUTPUT
-          unzip module/build/outputs/release/ReZygisk-v*-release.zip -d zksu-release
-          unzip module/build/outputs/release/ReZygisk-v*-debug.zip -d zksu-debug
+          releaseZip=$(ls module/build/outputs/release/ReZygisk-v*-release.zip)
+          releaseName=${releaseZip##*/}
+          releaseName=${releaseName%.zip}
+          echo "releaseName=$releaseName" >> $GITHUB_OUTPUT
+          
+          debugZip=$(ls module/build/outputs/release/ReZygisk-v*-debug.zip)
+          debugName=${debugZip##*/}
+          debugName=${debugName%.zip}
+          echo "debugName=$debugName" >> $GITHUB_OUTPUT
+          
+          mkdir -p zksu-release zksu-debug
+          unzip -o "$releaseZip" -d zksu-release
+          unzip -o "$debugZip" -d zksu-debug
 
-      - name: Upload release
+      - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.prepareArtifact.outputs.releaseName }}
           path: "./zksu-release/*"
 
-      - name: Upload debug
+      - name: Upload debug artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.prepareArtifact.outputs.debugName }}
           path: "./zksu-debug/*"
+
+      - name: Install GitHub CLI
+        run: sudo apt-get update && sudo apt-get install gh -y
+
+      - name: Generate unique tag
+        id: tag
+        run: |
+          TAG="ReZygisk-v1.0.0-${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}-release"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release via CLI
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Creating release with tag ${{ steps.tag.outputs.tag }}"
+          gh release create ${{ steps.tag.outputs.tag }} ./zksu-release/* \
+            --title "Release ${{ steps.tag.outputs.tag }}" \
+            --notes "Automated CI release" || echo "Release may already exist"
+
+      - name: Send artifacts to Telegram
+        if: success()
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          for folder in zksu-release zksu-debug; do
+            if [ -d "$folder" ]; then
+              for file in "$folder"/*; do
+                if [ -f "$file" ]; then
+                  type=$(basename "$folder")
+                  echo "Sending $file ($type) to Telegram..."
+                  curl -v -X POST "https://api.telegram.org/bot$TELEGRAM_TOKEN/sendDocument" \
+                    -F chat_id="$TELEGRAM_CHAT_ID" \
+                    -F document=@"$file" \
+                    -F caption="New $type: ${{ steps.tag.outputs.tag }}"
+                else
+                  echo "File $file not found!"
+                fi
+              done
+            else
+              echo "Folder $folder not found!"
+            fi
+          done
