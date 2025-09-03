@@ -37,31 +37,25 @@ jobs:
         if: success()
         id: prepareArtifact
         run: |
-          releaseZip=$(ls module/build/outputs/release/ReZygisk-v*-release.zip)
-          releaseName=${releaseZip##*/}
-          releaseName=${releaseName%.zip}
-          echo "releaseName=$releaseName" >> $GITHUB_OUTPUT
-          
-          debugZip=$(ls module/build/outputs/release/ReZygisk-v*-debug.zip)
-          debugName=${debugZip##*/}
-          debugName=${debugName%.zip}
-          echo "debugName=$debugName" >> $GITHUB_OUTPUT
-          
-          mkdir -p zksu-release zksu-debug
-          unzip -o "$releaseZip" -d zksu-release
-          unzip -o "$debugZip" -d zksu-debug
+          RELEASE_ZIP=$(ls module/build/outputs/release/ReZygisk-v*-release.zip)
+          RELEASE_NAME=$(basename "$RELEASE_ZIP" .zip)
+          echo "releaseZip=$RELEASE_ZIP" >> $GITHUB_OUTPUT
+          echo "releaseName=$RELEASE_NAME" >> $GITHUB_OUTPUT
 
-      - name: Upload release artifact
+          DEBUG_ZIP=$(ls module/build/outputs/release/ReZygisk-v*-debug.zip)
+          DEBUG_NAME=$(basename "$DEBUG_ZIP" .zip)
+          echo "debugZip=$DEBUG_ZIP" >> $GITHUB_OUTPUT
+          echo "debugName=$DEBUG_NAME" >> $GITHUB_OUTPUT
+
+      - name: Upload artifacts to GitHub Actions
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.prepareArtifact.outputs.releaseName }}
-          path: "./zksu-release/*"
-
-      - name: Upload debug artifact
-        uses: actions/upload-artifact@v4
+          path: ${{ steps.prepareArtifact.outputs.releaseZip }}
+      - uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.prepareArtifact.outputs.debugName }}
-          path: "./zksu-debug/*"
+          path: ${{ steps.prepareArtifact.outputs.debugZip }}
 
       - name: Install GitHub CLI
         run: sudo apt-get update && sudo apt-get install gh -y
@@ -72,36 +66,30 @@ jobs:
           TAG="ReZygisk-v1.0.0-${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}-release"
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
-      - name: Create GitHub Release via CLI
+      - name: Create or upload GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "Creating release with tag ${{ steps.tag.outputs.tag }}"
-          gh release create ${{ steps.tag.outputs.tag }} ./zksu-release/* \
-            --title "Release ${{ steps.tag.outputs.tag }}" \
-            --notes "Automated CI release" || echo "Release may already exist"
+          # если релиз уже есть, создаём его игнорируя ошибки
+          gh release create ${{ steps.tag.outputs.tag }} ${{ steps.prepareArtifact.outputs.releaseZip }} --title "Release ${{ steps.tag.outputs.tag }}" --notes "Automated CI release" || true
+          gh release upload ${{ steps.tag.outputs.tag }} ${{ steps.prepareArtifact.outputs.releaseZip }} --clobber
+          gh release upload ${{ steps.tag.outputs.tag }} ${{ steps.prepareArtifact.outputs.debugZip }} --clobber
 
-      - name: Send artifacts to Telegram
+      - name: Send zip files to Telegram
         if: success()
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          for folder in zksu-release zksu-debug; do
-            if [ -d "$folder" ]; then
-              for file in "$folder"/*; do
-                if [ -f "$file" ]; then
-                  type=$(basename "$folder")
-                  echo "Sending $file ($type) to Telegram..."
-                  curl -v -X POST "https://api.telegram.org/bot$TELEGRAM_TOKEN/sendDocument" \
-                    -F chat_id="$TELEGRAM_CHAT_ID" \
-                    -F document=@"$file" \
-                    -F caption="New $type: ${{ steps.tag.outputs.tag }}"
-                else
-                  echo "File $file not found!"
-                fi
-              done
+          for file in "${{ steps.prepareArtifact.outputs.releaseZip }}" "${{ steps.prepareArtifact.outputs.debugZip }}"; do
+            if [ -f "$file" ] && [ -s "$file" ]; then
+              echo "Sending $file to Telegram..."
+              curl -v -X POST "https://api.telegram.org/bot$TELEGRAM_TOKEN/sendDocument" \
+                -F chat_id="$TELEGRAM_CHAT_ID" \
+                -F document=@"$file" \
+                -F caption="New build: $(basename "$file")"
             else
-              echo "Folder $folder not found!"
+              echo "Skipping missing or empty file: $file"
             fi
           done
