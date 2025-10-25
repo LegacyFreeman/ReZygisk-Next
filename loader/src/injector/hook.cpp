@@ -98,7 +98,6 @@ struct ZygiskContext {
     ~ZygiskContext();
 
     /* Zygisksu changed: Load module fds */
-    bool load_modules_only();
     void run_modules_pre();
     void run_modules_post();
     DCL_PRE_POST(fork)
@@ -205,10 +204,7 @@ struct FileDescriptorInfo {
 DCL_HOOK_FUNC(void, _ZNK18FileDescriptorInfo14ReopenOrDetachERKNSt3__18functionIFvNS0_12basic_stringIcNS0_11char_traitsIcEENS0_9allocatorIcEEEEEEE, void *_this, void *fail_fn) {
     const int fd = *(const int *)((uintptr_t)_this + offsetof(FileDescriptorInfo, fd));
     const std::string *file_path = (const std::string *)((uintptr_t)_this + offsetof(FileDescriptorInfo, file_path));
-    const int open_flags = *(const int *)((uintptr_t)_this + offsetof(FileDescriptorInfo, open_flags));
     const bool is_sock = *(const bool *)((uintptr_t)_this + offsetof(FileDescriptorInfo, is_sock));
-
-    int new_fd;
 
     if (is_sock)
         goto bypass_fd_check;
@@ -216,9 +212,7 @@ DCL_HOOK_FUNC(void, _ZNK18FileDescriptorInfo14ReopenOrDetachERKNSt3__18functionI
     if (strncmp(file_path->c_str(), "/memfd:/boot-image-methods.art", strlen("/memfd:/boot-image-methods.art")) == 0)
         goto bypass_fd_check;
 
-    new_fd = TEMP_FAILURE_RETRY(open(file_path->c_str(), open_flags));
-    close(new_fd);
-    if (new_fd == -1) {
+    if (access(file_path->c_str(), F_OK) == -1) {
         LOGD("Failed to open file %s, detaching it", file_path->c_str());
 
         close(fd);
@@ -434,8 +428,6 @@ bool rezygisk_module_register(struct rezygisk_api *api, struct rezygisk_abi *mod
     api->hook_jni_native_methods = hookJniNativeMethods;
     if (module->api_version >= 4) {
         api->plt_hook_register_v4 = [](dev_t dev, ino_t inode, const char *symbol, void *fn, void **backup) {
-            LOGD("plt_hook_register_v4 called for dev=%lu, inode=%lu, symbol=%s, fn=%p, backup=%p",
-                 (unsigned long)dev, (unsigned long)inode, symbol, fn, backup);
             if (dev == 0 || inode == 0 || symbol == NULL || fn == NULL) {
                 LOGE("Invalid arguments to plt_hook_register");
 
@@ -445,11 +437,9 @@ bool rezygisk_module_register(struct rezygisk_api *api, struct rezygisk_abi *mod
             lsplt_register_hook(dev, inode, symbol, fn, backup);
         };
         api->exempt_fd = [](int fd) {
-            LOGD("exempt_fd called for fd=%d", fd);
             if (g_ctx) g_ctx->exempt_fd(fd);
         };
         api->plt_hook_commit = []() {
-            LOGD("plt_hook_commit called");
             return lsplt_commit_hook();
         };
     } else {
@@ -464,7 +454,6 @@ bool rezygisk_module_register(struct rezygisk_api *api, struct rezygisk_abi *mod
         };
     }
     api->connect_companion = [](void *id) {
-        LOGD("connect_companion called for id=%p", id);
         if ((size_t)id >= zygisk_module_length) {
             LOGE("Invalid module id %zu", (size_t)id);
 
@@ -475,8 +464,6 @@ bool rezygisk_module_register(struct rezygisk_api *api, struct rezygisk_abi *mod
     };
     api->set_option = [](void *id, enum rezygisk_options opt) {
         if (!g_ctx) return;
-
-        LOGD("set_option called for id=%p, opt=%d", id, opt);
 
         if ((size_t)id >= zygisk_module_length) {
             LOGE("Invalid module id %zu", (size_t)id);
@@ -500,7 +487,6 @@ bool rezygisk_module_register(struct rezygisk_api *api, struct rezygisk_abi *mod
     };
     if (module->api_version >= 2) {
         api->get_module_dir = [](void *id) {
-            LOGD("get_module_dir called for id=%p", id);
             if ((size_t)id >= zygisk_module_length) {
                 LOGE("Invalid module id %zu", (size_t)id);
 
@@ -510,7 +496,6 @@ bool rezygisk_module_register(struct rezygisk_api *api, struct rezygisk_abi *mod
             return rezygiskd_get_module_dir((size_t)id);
         };
         api->get_flags = []() {
-            LOGD("get_flags called");
             return g_ctx ? (g_ctx->info_flags & ~PRIVATE_MASK) : 0;
         };
     }
@@ -710,7 +695,7 @@ void ZygiskContext::fork_post() {
     g_ctx = nullptr;
 }
 
-bool ZygiskContext::load_modules_only() {
+bool load_modules_only() {
   struct zygisk_modules ms;
   if (rezygiskd_read_modules(&ms) == false) {
     LOGE("Failed to read modules from zygiskd");
@@ -752,13 +737,32 @@ bool ZygiskContext::load_modules_only() {
     zygisk_modules[zygisk_module_length].handle = handle;
     zygisk_modules[zygisk_module_length].zygisk_module_entry = (void (*)(void *, void *))entry;
 
+    zygisk_modules[zygisk_module_length].base = solist_get_base(entry);
+    zygisk_modules[zygisk_module_length].size = solist_get_size(entry);
+
+    zygisk_modules[zygisk_module_length].deconstructors = solist_get_deconstructors(entry);
+    zygisk_modules[zygisk_module_length].gap = solist_get_gap_info(entry);
+
+    LOGD("Loaded module [%s]. Entry: %p, Base: %p, Size: %zu, Deconstructors: fini_func=%p, fini_array=%p (size: %zu), Gap: %p (size: %zu)",
+         lib_path,
+         entry,
+         zygisk_modules[zygisk_module_length].base,
+         zygisk_modules[zygisk_module_length].size,
+         zygisk_modules[zygisk_module_length].deconstructors.fini_func,
+         zygisk_modules[zygisk_module_length].deconstructors.fini_array,
+         zygisk_modules[zygisk_module_length].deconstructors.fini_array_size,
+         zygisk_modules[zygisk_module_length].gap.start,
+         zygisk_modules[zygisk_module_length].gap.size);
+
     zygisk_modules[zygisk_module_length].unload = false;
 
-    zygisk_module_length++;
+    /* INFO: Early removal to avoid gaps in solist */
+    solist_drop_so_path(entry, false);
 
-    /* INFO: The module will call register module function, so by then, it must be fully registered. */
-    rezygisk_module_call_on_load(&zygisk_modules[zygisk_module_length - 1], env);
+    zygisk_module_length++;
   }
+
+  solist_reset_counters(zygisk_module_length, zygisk_module_length);
 
   free_modules(&ms);
 
@@ -768,6 +772,8 @@ bool ZygiskContext::load_modules_only() {
 /* Zygisksu changed: Load module fds */
 void ZygiskContext::run_modules_pre() {
   for (size_t i = 0; i < zygisk_module_length; i++) {
+    rezygisk_module_call_on_load(&zygisk_modules[i], env);
+
     if (flags[APP_SPECIALIZE]) rezygisk_module_call_pre_app_specialize(&zygisk_modules[i], args.app);
     else if (flags[SERVER_FORK_AND_SPECIALIZE]) rezygisk_module_call_pre_server_specialize(&zygisk_modules[i], args.server);
   }
@@ -785,24 +791,28 @@ void ZygiskContext::run_modules_post() {
 
         /* INFO: If module is unloaded by dlclose, there's no need to
                    hide it from soinfo manually. */
-        if (m->unload && dlclose(m->handle) == 0) modules_unloaded++;
-        else if (m->unload) {
-            PLOGE("Failed to unload module %zu", i);
-        } else {
-            bool has_dropped = solist_drop_so_path((void *)m->zygisk_module_entry, false);
-            if (!has_dropped) continue;
+        if (m->unload) {
+            /* INFO: Deconstructors are called in the inverted order, and following fini array then fini
+                       function order. It must not change. */
+            for (size_t j = m->deconstructors.fini_array_size; j > 0; j--) {
+                void (*destructor)(void) = m->deconstructors.fini_array[j - 1];
+                if (destructor) {
+                    LOGD("Calling destructor %p for module %p", (void *)destructor, (void *)m->zygisk_module_entry);
 
-            LOGD("Dropped solist record for %p", (void *)m->zygisk_module_entry);
+                    destructor();
+                }
+            }
+
+            if (m->deconstructors.fini_func) m->deconstructors.fini_func();
+
+            solist_unload_lib(&m->gap, m->base, m->size);
+
+            modules_unloaded++;
         }
     }
 
-    if (zygisk_module_length > 0) {
+    if (zygisk_module_length > 0)
         LOGD("Modules unloaded: %zu/%zu", modules_unloaded, zygisk_module_length);
-
-        solist_reset_counters(zygisk_module_length, modules_unloaded);
-
-        LOGD("Returned global counters to their original values");
-    }
 }
 
 /* Zygisksu changed: Load module fds */
@@ -950,11 +960,6 @@ void ZygiskContext::nativeForkSystemServer_pre() {
     LOGV("pre forkSystemServer");
     flags[SERVER_FORK_AND_SPECIALIZE] = true;
 
-    if (!modules_loaded) {
-        load_modules_only();
-        modules_loaded = true;
-    }
-
     fork_pre();
     if (!is_child())
       return;
@@ -1085,15 +1090,28 @@ void hook_functions() {
     PLT_HOOK_REGISTER(android_runtime_dev, android_runtime_inode, strdup);
     PLT_HOOK_REGISTER(android_runtime_dev, android_runtime_inode, property_get);
     PLT_HOOK_REGISTER(android_runtime_dev, android_runtime_inode, _ZNK18FileDescriptorInfo14ReopenOrDetachERKNSt3__18functionIFvNS0_12basic_stringIcNS0_11char_traitsIcEENS0_9allocatorIcEEEEEEE);
-    hook_commit(map_infos);
+
+    /* INFO: Fallback to older symbol for ReopenOrDetach */
+    if (!hook_commit(map_infos)) {
+        LOGW("Failed to hook. Trying older symbol for ReopenOrDetach");
+
+        plt_hook_list->clear();
+
+        PLT_HOOK_REGISTER(android_runtime_dev, android_runtime_inode, fork);
+        PLT_HOOK_REGISTER(android_runtime_dev, android_runtime_inode, strdup);
+        PLT_HOOK_REGISTER(android_runtime_dev, android_runtime_inode, property_get);
+        PLT_HOOK_REGISTER_SYM(android_runtime_dev, android_runtime_inode,
+                              "_ZNK18FileDescriptorInfo14ReopenOrDetachEPNSt3__112basic_stringIcNS0_11char_traitsIcEENS0_9allocatorIcEEEE",
+                              _ZNK18FileDescriptorInfo14ReopenOrDetachERKNSt3__18functionIFvNS0_12basic_stringIcNS0_11char_traitsIcEENS0_9allocatorIcEEEEEEE);
+
+        if (!hook_commit(map_infos)) {
+            LOGE("All methods of hooking failed");
+
+            plt_hook_list->clear();
+        }
+    }
 
     lsplt_free_maps(map_infos);
-
-    // Remove unhooked methods
-    plt_hook_list->erase(
-            std::remove_if(plt_hook_list->begin(), plt_hook_list->end(),
-                           [](auto &t) { return *std::get<3>(t) == nullptr;}),
-            plt_hook_list->end());
 }
 
 static void hook_unloader() {
@@ -1141,6 +1159,13 @@ static void hook_unloader() {
     }
 
     lsplt_free_maps(map_infos);
+
+    /* INFO: Load modules early on (before system server fork) to spread through all Zygotes */
+    if (!modules_loaded) {
+        if (!load_modules_only()) {
+            LOGE("Failed to load modules in hook_unloader");
+        } else modules_loaded = true;
+    }
 }
 
 static void unhook_functions() {
