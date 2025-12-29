@@ -1,6 +1,6 @@
 # ReZygisk
 
-[English](https://github.com/PerformanC/ReZygisk)
+[English](../README.md)
 
 ReZygisk adalah turunan dari Zygisk Next, sebuah implementasi mandiri dari Zygisk, menyediakan dukungan API Zygisk untuk KernelSU, APatch, dan Magisk (Versi Resmi dan Kitsune).
 
@@ -20,13 +20,13 @@ Meskipun developer Zygisk Next terkenal dan dipercaya dalam komunitas Android, h
 
 | Alat             | Deskripsi                                  |
 |------------------|--------------------------------------------|
-| `Android NDK`    | Native Development Kit untuk Android      |
+| `Android NDK`    | Native Development Kit untuk Android       |
 
 ### Komponen Pendukung C++
 
-| Ketergantungan | Deskripsi                      |
+| Ketergantungan | Deskripsi                       |
 |----------------|---------------------------------|
-| `lsplt`        | Simple PLT Hook untuk Android |
+| `lsplt`        | Simple PLT Hook untuk Android   |
 
 ## Instalasi
 

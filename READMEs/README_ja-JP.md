@@ -1,6 +1,6 @@
 # ReZygisk
 
-[Bahasa Indonesia](/READMEs/README_id-ID.md)|[Tiếng Việt](/READMEs/README_vi-VN.md)|[Português Brasileiro](/READMEs/README_pt-BR.md)|[French](/READMEs/README_fr-FR.md)
+[English](../README.md)
 
 ReZygiskはZygiskのスタンドアローン実装であるZygisk Nextのフォークです。ReZygiskは、KernelSU、APatch、Magisk（オフィシャルバージョンとKitsuneバージョン両方）それぞれへのZygisk APIサポートを備えています。
 
@@ -24,7 +24,7 @@ Zygisk Nextの開発者達は有名かつコミュニティからも信頼され
 
 ### C++ 依存関係
 
-| 依存関係    | 説明                           |
+| 依存関係    | 説明                          |
 |------------|-------------------------------|
 | `lsplt`    | Simple PLT Hook for Android   |
 
@@ -47,6 +47,7 @@ ReZygiskの安定性や匿名性のためには、ビルドファイル/Zipフ�
 
 > [!WARNING]
 > Magiskを使用しているのならば、ビルトインのZygiskがReZygiskと競合するため無効化してください。Magiskの`設定`セクションを開き、Zygiskオプションを無効化することでできます。
+
 ### 3. インストールを確認
 
 再起動後、ルートマネージャーの`Modules`セクションをチェックすることによりReZygiskが正常に動いているかどうか確認できます。
