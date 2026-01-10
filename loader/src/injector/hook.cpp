@@ -770,7 +770,13 @@ void ZygiskContext::run_modules_post() {
         if (flags[APP_SPECIALIZE]) rezygisk_module_call_post_app_specialize(m, args.app);
         else if (flags[SERVER_FORK_AND_SPECIALIZE]) rezygisk_module_call_post_server_specialize(m, args.server);
 
-        if (!m->unload) continue;
+        if (!m->unload) {
+            LOGD("Abandoning module library at %p", &m->lib);
+
+            csoloader_abandon(&m->lib);
+
+            continue;
+        }
 
         if (csoloader_unload(&m->lib) == false) {
             LOGE("Failed to unload module library");
