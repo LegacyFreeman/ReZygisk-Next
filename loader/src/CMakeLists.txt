@@ -17,6 +17,9 @@ add_library(zygisk SHARED ${INJECTOR_SRC_LIST})
 target_include_directories(zygisk PRIVATE include)
 target_link_libraries(zygisk cxx::cxx log common lsplt_static csoloader)
 
+# INFO: Reduce binary size by cleaning ELF dynsym
+target_link_options(zygisk PRIVATE "-nostartfiles")
+
 aux_source_directory(ptracer PTRACER_SRC_LIST)
 add_executable(libzygisk_ptrace.so ${PTRACER_SRC_LIST})
 target_include_directories(libzygisk_ptrace.so PRIVATE include)

@@ -17,12 +17,12 @@ const themeList = {
   },
 }
 const setData = (mode) => {
-  localStorage.setItem('/system/theme', mode)
+  localStorage.setItem('/ReZygisk/theme', mode)
   return mode
 }
 
 // INFO: Initial open logic
-sys_theme = localStorage.getItem('/system/theme')
+sys_theme = localStorage.getItem('/ReZygisk/theme')
 if (!sys_theme) sys_theme = setData('dark')
 themeList[sys_theme](true)
 

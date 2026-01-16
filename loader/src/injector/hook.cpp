@@ -24,8 +24,6 @@
 #include "module.h"
 #include "misc.h"
 
-#include "solist.h"
-
 #include "art_method.h"
 
 using namespace std;

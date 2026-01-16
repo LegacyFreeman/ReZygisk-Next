@@ -44,7 +44,7 @@ document.addEventListener('click', async (event) => {
   smallPageDisabler('language', 'settings')
   await setNewLanguage(getLangLocate)
 
-  localStorage.setItem('/system/language', getLangLocate)
+  localStorage.setItem('/ReZygisk/language', getLangLocate)
 }, false)
 
 function setData(data, tag) {

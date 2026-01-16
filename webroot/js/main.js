@@ -10,16 +10,16 @@ export function setError(place, issue) {
 }
 
 export function setLangData(mode) {
-  localStorage.setItem('/system/language', mode)
+  localStorage.setItem('/ReZygisk/language', mode)
 
-  return localStorage.getItem('/system/language')
+  return localStorage.getItem('/ReZygisk/language')
 }
 
 export function setErrorData(errorLog) {
-  const getPrevious = localStorage.getItem('/system/error')
+  const getPrevious = localStorage.getItem('/ReZygisk/error')
   const finalLog = getPrevious && getPrevious.length !== 0 ? getPrevious + `\n` + errorLog : errorLog
 
-  localStorage.setItem('/system/error', finalLog)
+  localStorage.setItem('/ReZygisk/error', finalLog)
 
   return finalLog
 }
@@ -52,7 +52,7 @@ async function getModuleNames(modules) {
 
   fullScreen(true)
 
-  let sys_lang = localStorage.getItem('/system/language')
+  let sys_lang = localStorage.getItem('/ReZygisk/language')
 
   if (!sys_lang) sys_lang = setLangData('en_US')
   if (sys_lang !== 'en_US') await setNewLanguage(sys_lang, true)
@@ -256,7 +256,7 @@ async function getModuleNames(modules) {
   loading_screen.style.display = 'none'
   bottom_nav.style.display = 'flex'
 
-  const start_time = Number(localStorage.getItem('/system/boot-time'))
+  const start_time = Number(localStorage.getItem('/ReZygisk/boot-time'))
   console.log('[rezygisk.js] boot time: ', Date.now() - start_time, 'ms')
-  localStorage.removeItem('/system/boot_time')
+  localStorage.removeItem('/ReZygisk/boot_time')
 })().catch((err) => setError('WebUI', err.stack ? err.stack : err.message))

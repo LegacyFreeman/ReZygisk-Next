@@ -8,7 +8,6 @@
 #include <csoloader.h>
 
 #include "logging.h"
-#include "solist.h"
 
 #define REZYGISK_API_VERSION 5
 

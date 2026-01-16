@@ -74,8 +74,6 @@ void *find_func_addr(struct maps *local_info, struct maps *remote_info, const ch
 
 void align_stack(struct user_regs_struct *regs, long preserve);
 
-uintptr_t push_string(int pid, struct user_regs_struct *regs, const char *str);
-
 uintptr_t remote_call(int pid, struct user_regs_struct *regs, uintptr_t func_addr, uintptr_t return_addr, long *args, size_t args_size);
 
 int fork_dont_care();

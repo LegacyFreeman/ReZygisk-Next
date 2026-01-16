@@ -1,7 +1,7 @@
 const switcher = document.getElementById('font_switcher')
 const rootCss = document.querySelector(':root')
 
-let sys_font = localStorage.getItem('/system/font')
+let sys_font = localStorage.getItem('/ReZygisk/font')
 if (!sys_font) sys_font = setData('false')
 if (sys_font === 'true') {
   switcher.setAttribute('checked', '')
@@ -28,7 +28,7 @@ function setSystemFont() {
 }
 
 function setData(mode) {
-  localStorage.setItem('/system/font', mode)
+  localStorage.setItem('/ReZygisk/font', mode)
 
   return mode
 }

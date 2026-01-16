@@ -8,7 +8,7 @@ import { translateSettingsPage } from './translate/settings.js'
 
 export async function setNewLanguage(locate, initialize) {
   const main_html = document.getElementById('main_html')
-  const old_translations = await getTranslations(initialize ? 'en_US' : localStorage.getItem('/system/language'))
+  const old_translations = await getTranslations(initialize ? 'en_US' : localStorage.getItem('/ReZygisk/language'))
   const new_translations = await getTranslations(locate)
 
   if (locate.includes('ar_')) main_html.setAttribute("dir", "rtl");

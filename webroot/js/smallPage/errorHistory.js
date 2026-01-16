@@ -37,7 +37,7 @@ document.getElementById('errorh_copy').addEventListener('click', () => {
 
 document.getElementById('errorh_clear_all').addEventListener('click', () => {
   panel.innerHTML = ''
-  localStorage.setItem('/system/error', '')
+  localStorage.setItem('/ReZygisk/error', '')
 })
 
 function setData(mode, tag) {

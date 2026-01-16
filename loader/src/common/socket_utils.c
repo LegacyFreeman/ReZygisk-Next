@@ -30,14 +30,50 @@ ssize_t write_loop(int fd, const void *buf, size_t count) {
   return written;
 }
 
-ssize_t read_loop(int fd, void *buf, size_t count) {
+ssize_t read_loop_offset(int fd, void *buf, size_t count, off_t off) {
+  if (off < 0) {
+    LOGE("read_loop_offset: negative offset: %lld", (long long)off);
+
+    return -1;
+  }
+
   ssize_t read_bytes = 0;
   while (read_bytes < (ssize_t)count) {
-    ssize_t ret = read(fd, buf + read_bytes, count - read_bytes);
+    size_t remaining = count - (size_t)read_bytes;
+    char *dst = (char *)buf + read_bytes;
+    ssize_t ret = pread(fd, dst, remaining, off + read_bytes);
     if (ret == -1) {
       if (errno == EINTR || errno == EAGAIN) continue;
 
       PLOGE("read");
+
+      return -1;
+    }
+
+    if (ret == 0) {
+      LOGE("read: 0 bytes read");
+
+      return -1;
+    }
+
+    read_bytes += ret;
+  }
+
+  return read_bytes;
+}
+
+ssize_t read_loop(int fd, void *buf, size_t count) {
+  ssize_t read_bytes = 0;
+  while (read_bytes < (ssize_t)count) {
+    size_t remaining = count - (size_t)read_bytes;
+    char *dst = (char *)buf + read_bytes;
+    ssize_t ret = read(fd, dst, remaining);
+    if (ret == -1) {
+      if (errno == EINTR || errno == EAGAIN) continue;
+
+      PLOGE("read");
+
+      return -1;
     }
 
     if (ret == 0) {

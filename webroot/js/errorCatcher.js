@@ -4,10 +4,10 @@ function setError(place, issue) {
 }
 
 function setErrorData(errorLog) {
-  const getPrevious = localStorage.getItem('/system/error')
+  const getPrevious = localStorage.getItem('/ReZygisk/error')
   const finalLog = getPrevious && getPrevious.length !== 0 ? getPrevious + `\n` + errorLog : errorLog
 
-  localStorage.setItem('/system/error', finalLog)
+  localStorage.setItem('/ReZygisk/error', finalLog)
   return finalLog
 }
 

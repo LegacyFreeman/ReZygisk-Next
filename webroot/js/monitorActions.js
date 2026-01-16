@@ -9,7 +9,7 @@ const monitor_pause = document.getElementById('monitor_pause_button')
 const monitor_status = document.getElementById('monitor_status');
 
 (async () => {
-  const sys_lang = localStorage.getItem('/system/language')
+  const sys_lang = localStorage.getItem('/ReZygisk/language')
   const translations = await getTranslations(sys_lang || 'en_US')
 
   if (monitor_start) {
