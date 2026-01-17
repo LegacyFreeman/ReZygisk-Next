@@ -10,7 +10,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
-#include <sys/prctl.h>
 #include <unistd.h>
 
 #include <elf.h>
@@ -414,57 +413,6 @@ static bool find_dynsym_value(int fd, const struct elf_dyn_info *info, const cha
   return false;
 }
 
-/* INFO: Apply VMA names to anonymous mappings in a region via remote prctl. */
-static bool apply_vma_names(int pid, struct user_regs_struct *regs, uintptr_t prctl_addr,
-                            uintptr_t libc_return_addr, uintptr_t region_start, size_t region_len,
-                            uintptr_t name_ptr) {
-  char pid_maps[64];
-  snprintf(pid_maps, sizeof(pid_maps), "/proc/%d/maps", pid);
-
-  struct maps *current_maps = parse_maps(pid_maps);
-  if (!current_maps) {
-    LOGE("Failed to parse remote process maps");
-
-    return false;
-  }
-
-  uintptr_t region_end = region_start + region_len;
-  struct user_regs_struct call_regs;
-
-  for (size_t i = 0; i < current_maps->size; i++) {
-    struct map *m = &current_maps->maps[i];
-
-    /* INFO: Skip VMAs outside our region */
-    if (m->end <= region_start || m->start >= region_end) continue;
-
-    /* INFO: Skip non-anonymous mappings (backed by files) */
-    if (m->dev != 0 || m->inode != 0) continue;
-
-    size_t vma_len = m->end - m->start;
-
-    call_regs = *regs;
-    long prctl_args[5];
-    prctl_args[0] = PR_SET_VMA;
-    prctl_args[1] = PR_SET_VMA_ANON_NAME;
-    prctl_args[2] = (long)m->start;
-    prctl_args[3] = (long)vma_len;
-    prctl_args[4] = (long)name_ptr;
-
-    uintptr_t rc = remote_call(pid, &call_regs, prctl_addr, libc_return_addr, prctl_args, 5);
-    if (rc != 0) {
-      LOGE("Failed to set VMA name for region 0x%" PRIxPTR "-0x%" PRIxPTR ": prctl returned %p", (uintptr_t)m->start, (uintptr_t)m->end, (void *)rc);
-
-      free_maps(current_maps);
-
-      return false;
-    }
-  }
-
-  free_maps(current_maps);
-
-  return true;
-}
-
 #ifdef __LP64__
   #define ELF_R_TYPE ELF64_R_TYPE
   #define ELF_R_SYM ELF64_R_SYM
@@ -759,9 +707,65 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
     return false;
   }
 
-  void *prctl_addr = find_func_addr(local_map, remote_map, libc_path, "prctl");
-  if (!prctl_addr) {
-    LOGE("Failed to resolve remote prctl");
+  void *open_addr = find_func_addr(local_map, remote_map, libc_path, "open");
+  if (!open_addr) {
+    LOGE("Failed to resolve remote open");
+
+    free(phdr);
+    close(fd);
+
+    return false;
+  }
+
+  void *close_addr = find_func_addr(local_map, remote_map, libc_path, "close");
+  if (!close_addr) {
+    LOGE("Failed to resolve remote close");
+
+    free(phdr);
+    close(fd);
+
+    return false;
+  }
+
+  long args[6];
+
+  /* INFO: Copy library path into remote memory for file-backed mappings */
+  size_t path_len = strlen(lib_path) + 1;
+  args[0] = 0;
+  args[1] = (long)path_len;
+  args[2] = PROT_READ | PROT_WRITE;
+  args[3] = MAP_PRIVATE | MAP_ANONYMOUS;
+  args[4] = -1;
+  args[5] = 0;
+
+  struct user_regs_struct call_regs = regs_saved;
+  uintptr_t remote_path = remote_call(pid, &call_regs, (uintptr_t)mmap_addr, libc_return_addr, args, 6);
+  if (!remote_path || remote_path == (uintptr_t)MAP_FAILED) {
+    LOGE("remote mmap for path failed: %p", (void *)remote_path);
+
+    free(phdr);
+    close(fd);
+
+    return false;
+  }
+
+  if (write_proc(pid, remote_path, lib_path, path_len) != (ssize_t)path_len) {
+    LOGE("Failed to write remote path string");
+
+    free(phdr);
+    close(fd);
+
+    return false;
+  }
+
+  args[0] = (long)remote_path;
+  args[1] = O_RDONLY | O_CLOEXEC;
+  args[2] = 0;
+
+  call_regs = regs_saved;
+  long remote_fd = (long)remote_call(pid, &call_regs, (uintptr_t)open_addr, libc_return_addr, args, 3);
+  if (remote_fd < 0) {
+    LOGE("Failed to open remote file: %s", lib_path);
 
     free(phdr);
     close(fd);
@@ -770,7 +774,6 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
   }
 
   /* INFO: Reserve address space with PROT_NONE */
-  long args[6];
   args[0] = 0;
   args[1] = (long)map_size;
   args[2] = PROT_NONE;
@@ -778,10 +781,17 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
   args[4] = -1;
   args[5] = 0;
 
-  struct user_regs_struct call_regs = regs_saved;
+  call_regs = regs_saved;
   uintptr_t remote_base = remote_call(pid, &call_regs, (uintptr_t)mmap_addr, libc_return_addr, args, 6);
   if (!remote_base || remote_base == (uintptr_t)MAP_FAILED) {
     LOGE("remote mmap reserve failed: %p", (void *)remote_base);
+
+    call_regs = regs_saved;
+
+    args[0] = remote_fd;
+  
+    remote_call(pid, &call_regs, (uintptr_t)close_addr, libc_return_addr, args, 1);
+
     free(phdr);
     close(fd);
 
@@ -799,7 +809,7 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
 
   size_t segs_count = 0;
 
-  /* INFO: Map each PT_LOAD as anonymous RW, copy file bytes, record final permissions */
+  /* INFO: Map non-writable PT_LOAD from file */
   for (int i = 0; i < eh.e_phnum; i++) {
     if (phdr[i].p_type != PT_LOAD) continue;
 
@@ -809,39 +819,106 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
     uintptr_t seg_page_end = page_end(seg_end, page_size);
     size_t seg_page_len = (size_t)(seg_page_end - seg_page);
 
-    args[0] = (long)seg_page;
-    args[1] = (long)seg_page_len;
-    args[2] = PROT_READ | PROT_WRITE;
-    args[3] = MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS;
-    args[4] = -1;
-    args[5] = 0;
+    bool is_writable = (phdr[i].p_flags & PF_W) != 0;
 
-    call_regs = regs_saved;
-    uintptr_t seg_map = remote_call(pid, &call_regs, (uintptr_t)mmap_addr, libc_return_addr, args, 6);
-    if (!seg_map || seg_map == (uintptr_t)MAP_FAILED) {
-      LOGE("remote mmap segment failed for phdr %d", i);
-      free(phdr);
-      close(fd);
+    if (is_writable) {
+      args[0] = (long)seg_page;
+      args[1] = (long)seg_page_len;
+      args[2] = PROT_READ | PROT_WRITE;
+      args[3] = MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS;
+      args[4] = -1;
+      args[5] = 0;
 
-      return false;
-    }
+      call_regs = regs_saved;
+      uintptr_t seg_map = remote_call(pid, &call_regs, (uintptr_t)mmap_addr, libc_return_addr, args, 6);
+      if (!seg_map || seg_map == (uintptr_t)MAP_FAILED) {
+        LOGE("remote mmap writable segment failed for phdr %d", i);
 
-    /* INFO: Copy segment file content to remote in one shot. BSS (p_memsz > p_filesz)
-               is already zeroed by kernel since we used MAP_ANONYMOUS. */
-    size_t filesz = (size_t)phdr[i].p_filesz;
-    if (filesz > 0) {
-      char *buf = (char *)malloc(filesz);
-      if (!buf || !read_loop_offset(fd, buf, filesz, (off_t)phdr[i].p_offset) || write_proc(pid, seg_start, buf, filesz) != (ssize_t)filesz) {
-        LOGE("Failed to copy segment data for phdr %d", i);
+        call_regs = regs_saved;
 
-        free(buf);
+        args[0] = remote_fd;
+  
+        remote_call(pid, &call_regs, (uintptr_t)close_addr, libc_return_addr, args, 1);
         free(phdr);
         close(fd);
 
         return false;
       }
 
-      free(buf);
+      size_t filesz = (size_t)phdr[i].p_filesz;
+      if (filesz > 0) {
+        char *buf = (char *)malloc(filesz);
+        if (!buf || !read_loop_offset(fd, buf, filesz, (off_t)phdr[i].p_offset) || write_proc(pid, seg_start, buf, filesz) != (ssize_t)filesz) {
+          LOGE("Failed to copy segment data for phdr %d", i);
+
+          free(buf);
+          free(phdr);
+          close(fd);
+
+          return false;
+        }
+
+        free(buf);
+      }
+    } else {
+      off_t seg_offset = (off_t)phdr[i].p_offset;
+      off_t file_page_offset = (off_t)page_start((uintptr_t)seg_offset, page_size);
+      uintptr_t file_end = (uintptr_t)phdr[i].p_vaddr + (uintptr_t)phdr[i].p_filesz + load_bias;
+      uintptr_t file_page_end = page_end(file_end, page_size);
+
+      if (phdr[i].p_filesz > 0) {
+        call_regs = regs_saved;
+
+        size_t file_map_len = (size_t)(file_page_end - seg_page);
+        args[0] = (long)seg_page;
+        args[1] = (long)file_map_len;
+        args[2] = PROT_READ | PROT_WRITE;
+        args[3] = MAP_FIXED | MAP_PRIVATE;
+        args[4] = remote_fd;
+        args[5] = (long)file_page_offset;
+
+        uintptr_t seg_map = remote_call(pid, &call_regs, (uintptr_t)mmap_addr, libc_return_addr, args, 6);
+        if (!seg_map || seg_map == (uintptr_t)MAP_FAILED) {
+          LOGE("remote mmap file-backed segment failed for phdr %d", i);
+
+          call_regs = regs_saved;
+
+          args[0] = remote_fd;
+
+          remote_call(pid, &call_regs, (uintptr_t)close_addr, libc_return_addr, args, 1);
+          free(phdr);
+          close(fd);
+
+          return false;
+        }
+      }
+
+      if (seg_page_end > file_page_end) {
+        call_regs = regs_saved;
+
+        args[0] = (long)file_page_end;
+        args[1] = (long)(seg_page_end - file_page_end);
+        args[2] = PROT_READ | PROT_WRITE;
+        args[3] = MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS;
+        args[4] = -1;
+        args[5] = 0;
+
+        uintptr_t bss_map = remote_call(pid, &call_regs, (uintptr_t)mmap_addr, libc_return_addr, args, 6);
+        if (!bss_map || bss_map == (uintptr_t)MAP_FAILED) {
+          LOGE("remote mmap bss segment failed for phdr %d", i);
+
+          call_regs = regs_saved;
+
+          args[0] = remote_fd;
+
+          call_regs = regs_saved;
+          remote_call(pid, &call_regs, (uintptr_t)close_addr, libc_return_addr, args, 1);
+          free(phdr);
+          close(fd);
+
+          return false;
+        }
+      }
     }
 
     /* INFO: Record segment info for later protection finalization */
@@ -858,6 +935,12 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
       segs_count++;
     }
   }
+
+  call_regs = regs_saved;
+
+  args[0] = remote_fd;
+
+  remote_call(pid, &call_regs, (uintptr_t)close_addr, libc_return_addr, args, 1);
 
   struct elf_dyn_info dinfo;
   if (!elf_load_dyn_info(fd, &eh, phdr, &dinfo)) {
@@ -912,34 +995,6 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
 
     call_regs = regs_saved;
     remote_call(pid, &call_regs, (uintptr_t)mprotect_addr, libc_return_addr, args, 3);
-  }
-
-  /* INFO: Some kernels drop names if string pointer invalidates.
-             We already have the ELF parsed, so look up symbol inline and use the helper. */
-  ElfW(Addr) name_sym_value = 0;
-  if (!find_dynsym_value(fd, &dinfo, "k_library_name", &name_sym_value)) {
-    LOGE("Failed to resolve k_library_name from ELF dynsym");
-
-    free((void *)needed_paths);
-    elf_dyn_info_destroy(&dinfo);
-    free(phdr);
-    close(fd);
-
-    return false;
-  }
-
-  call_regs = regs_saved;
-
-  uintptr_t name_ptr = (uintptr_t)load_bias + (uintptr_t)name_sym_value;
-  if (!apply_vma_names(pid, &call_regs, (uintptr_t)prctl_addr, libc_return_addr, remote_base, map_size, name_ptr)) {
-    LOGE("Failed to apply VMA names");
-
-    free((void *)needed_paths);
-    elf_dyn_info_destroy(&dinfo);
-    free(phdr);
-    close(fd);
-
-    return false;
   }
 
   ElfW(Addr) entry_value = 0;
