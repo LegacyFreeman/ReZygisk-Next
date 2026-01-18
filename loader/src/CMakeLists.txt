@@ -1,8 +1,6 @@
 cmake_minimum_required(VERSION 3.22.1)
 project("loader")
 
-find_package(cxx REQUIRED CONFIG)
-
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_definitions(-DZKSU_VERSION=\"${ZKSU_VERSION}\")
@@ -15,7 +13,7 @@ target_link_libraries(common log)
 aux_source_directory(injector INJECTOR_SRC_LIST)
 add_library(zygisk SHARED ${INJECTOR_SRC_LIST})
 target_include_directories(zygisk PRIVATE include)
-target_link_libraries(zygisk cxx::cxx log common lsplt_static csoloader)
+target_link_libraries(zygisk log common lsplt_static csoloader)
 
 # INFO: Reduce binary size by cleaning ELF dynsym
 target_link_options(zygisk PRIVATE "-nostartfiles")

@@ -27,25 +27,9 @@ create_sys_perm() {
 }
 
 export TMP_PATH=/data/adb/rezygisk
-
-if [ -d $TMP_PATH ]; then
-  rm -rf $TMP_PATH
-fi
+rm -rf $TMP_PATH
 
 create_sys_perm $TMP_PATH
-
-if [ -f $MODDIR/lib64/libzygisk.so ];then
-  create_sys_perm $TMP_PATH/lib64
-  cp $MODDIR/lib64/libzygisk.so $TMP_PATH/lib64/libzygisk.so
-  chcon u:object_r:system_file:s0 $TMP_PATH/lib64/libzygisk.so
-fi
-
-if [ -f $MODDIR/lib/libzygisk.so ];then
-  create_sys_perm $TMP_PATH/lib
-  cp $MODDIR/lib/libzygisk.so $TMP_PATH/lib/libzygisk.so
-  chcon u:object_r:system_file:s0 $TMP_PATH/lib/libzygisk.so
-fi
-
 
 # INFO: Utilize the one with the biggest output, as some devices with Tango have the full list
 #         in ro.product.cpu.abilist but others only have a subset there, and the full list in

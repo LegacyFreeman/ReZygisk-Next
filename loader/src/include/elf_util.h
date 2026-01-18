@@ -5,13 +5,12 @@
 #include <string.h>
 #include <link.h>
 #include <sys/types.h>
-#include <pthread.h> // Added for threading primitives
+#include <pthread.h>
 
 #define SHT_GNU_HASH 0x6ffffff6
 
-// Function pointer types for constructors and destructors
 typedef void (*linker_simple_func_t)(void);
-typedef void (*linker_ctor_function_t)(int, char**, char**);
+typedef void (*linker_ctor_function_t)(int, char **, char **);
 typedef void (*linker_dtor_function_t)(void);
 
 

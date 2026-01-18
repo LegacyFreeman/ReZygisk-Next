@@ -277,9 +277,7 @@ bool trace_zygote(int pid) {
   }
 
   if (STOPPED_WITH(SIGSTOP, PTRACE_EVENT_STOP)) {
-    char lib_path[PATH_MAX];
-    snprintf(lib_path, sizeof(lib_path), "%s/lib" LP_SELECT("", "64") "/libzygisk.so", rezygiskd_get_path());
-
+    char *lib_path = "/data/adb/modules/rezygisk/lib" LP_SELECT("", "64") "/libzygisk.so";
     if (!inject_on_main(pid, lib_path)) {
       LOGE("failed to inject");
 

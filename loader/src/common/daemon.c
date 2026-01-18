@@ -49,7 +49,7 @@ int rezygiskd_connect(uint8_t retry) {
   return -1;
 }
 
-bool rezygiskd_ping() {
+bool rezygiskd_zygote_injected() {
   int fd = rezygiskd_connect(5);
   if (fd == -1) {
     PLOGE("connection to ReZygiskd");
@@ -57,7 +57,7 @@ bool rezygiskd_ping() {
     return false;
   }
 
-  write_uint8_t(fd, (uint8_t)PingHeartbeat);
+  write_uint8_t(fd, (uint8_t)ZygoteInjected);
 
   close(fd);
 

@@ -19,7 +19,7 @@
 #define SYSTEM_SERVER_STARTED 10
 
 enum DaemonSocketAction {
-  PingHeartbeat          = 0,
+  ZygoteInjected         = 0,
   GetProcessFlags        = 1,
   GetInfo                = 2,
   ReadModules            = 3,

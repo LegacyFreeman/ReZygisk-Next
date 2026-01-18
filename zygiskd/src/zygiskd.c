@@ -339,7 +339,7 @@ void zygiskd_start(char *restrict argv[]) {
     enum DaemonSocketAction action = (enum DaemonSocketAction)action8;
 
     switch (action) {
-      case PingHeartbeat: {
+      case ZygoteInjected: {
         unix_datagram_sendto(CONTROLLER_SOCKET, &(uint8_t){ ZYGOTE_INJECTED }, sizeof(uint8_t));
 
         break;

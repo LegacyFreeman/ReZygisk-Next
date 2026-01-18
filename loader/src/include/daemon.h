@@ -1,10 +1,6 @@
 #ifndef DAEMON_H
 #define DAEMON_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif /* __cplusplus */
-
 #include <stdbool.h>
 
 #include <unistd.h>
@@ -18,7 +14,7 @@ extern "C" {
 #define SOCKET_FILE_NAME LP_SELECT("cp32", "cp64") ".sock"
 
 enum rezygiskd_actions {
-  PingHeartbeat,
+  ZygoteInjected,
   GetProcessFlags,
   GetInfo,
   ReadModules,
@@ -61,7 +57,7 @@ static inline const char *rezygiskd_get_path() {
 
 int rezygiskd_connect(uint8_t retry);
 
-bool rezygiskd_ping();
+bool rezygiskd_zygote_injected();
 
 uint32_t rezygiskd_get_process_flags(uid_t uid, const char *const process);
 
@@ -82,9 +78,5 @@ void rezygiskd_zygote_restart();
 void rezygiskd_system_server_started();
 
 bool rezygiskd_update_mns(enum mount_namespace_state nms_state, char *buf, size_t buf_size);
-
-#ifdef __cplusplus
-}
-#endif /* __cplusplus */
 
 #endif /* DAEMON_H */
