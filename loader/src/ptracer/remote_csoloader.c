@@ -822,43 +822,80 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
     bool is_writable = (phdr[i].p_flags & PF_W) != 0;
 
     if (is_writable) {
-      args[0] = (long)seg_page;
-      args[1] = (long)seg_page_len;
-      args[2] = PROT_READ | PROT_WRITE;
-      args[3] = MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS;
-      args[4] = -1;
-      args[5] = 0;
+      off_t seg_offset = (off_t)phdr[i].p_offset;
+      off_t file_page_offset = (off_t)page_start((uintptr_t)seg_offset, page_size);
+      uintptr_t file_end = (uintptr_t)phdr[i].p_vaddr + (uintptr_t)phdr[i].p_filesz + load_bias;
+      uintptr_t file_page_end = page_end(file_end, page_size);
 
-      call_regs = regs_saved;
-      uintptr_t seg_map = remote_call(pid, &call_regs, (uintptr_t)mmap_addr, libc_return_addr, args, 6);
-      if (!seg_map || seg_map == (uintptr_t)MAP_FAILED) {
-        LOGE("remote mmap writable segment failed for phdr %d", i);
-
+      if (phdr[i].p_filesz > 0) {
         call_regs = regs_saved;
 
-        args[0] = remote_fd;
+        size_t file_map_len = (size_t)(file_page_end - seg_page);
+        args[0] = (long)seg_page;
+        args[1] = (long)file_map_len;
+        args[2] = PROT_READ | PROT_WRITE;
+        args[3] = MAP_FIXED | MAP_PRIVATE;
+        args[4] = remote_fd;
+        args[5] = (long)file_page_offset;
+
+        uintptr_t seg_map = remote_call(pid, &call_regs, (uintptr_t)mmap_addr, libc_return_addr, args, 6);
+        if (!seg_map || seg_map == (uintptr_t)MAP_FAILED) {
+          LOGE("remote mmap writable file-backed segment failed for phdr %d", i);
+
+          call_regs = regs_saved;
+
+          args[0] = remote_fd;
   
-        remote_call(pid, &call_regs, (uintptr_t)close_addr, libc_return_addr, args, 1);
-        free(phdr);
-        close(fd);
-
-        return false;
-      }
-
-      size_t filesz = (size_t)phdr[i].p_filesz;
-      if (filesz > 0) {
-        char *buf = (char *)malloc(filesz);
-        if (!buf || !read_loop_offset(fd, buf, filesz, (off_t)phdr[i].p_offset) || write_proc(pid, seg_start, buf, filesz) != (ssize_t)filesz) {
-          LOGE("Failed to copy segment data for phdr %d", i);
-
-          free(buf);
+          remote_call(pid, &call_regs, (uintptr_t)close_addr, libc_return_addr, args, 1);
           free(phdr);
           close(fd);
 
           return false;
         }
 
-        free(buf);
+        /* INFO: Zero-fill the tail of the last page (p_memsz - p_filesz within page). */
+        if (file_page_end > file_end) {
+          size_t tail_len = (size_t)(file_page_end - file_end);
+          char *zeros = (char *)calloc(1, tail_len);
+          if (!zeros || write_proc(pid, file_end, zeros, tail_len) != (ssize_t)tail_len) {
+            LOGE("Failed to zero tail for phdr %d", i);
+
+            if (zeros) free(zeros);
+            free(phdr);
+            close(fd);
+
+            return false;
+          }
+
+          free(zeros);
+        }
+      }
+
+      if (seg_page_end > file_page_end) {
+        call_regs = regs_saved;
+
+        args[0] = (long)file_page_end;
+        args[1] = (long)(seg_page_end - file_page_end);
+        args[2] = PROT_READ | PROT_WRITE;
+        args[3] = MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS;
+        args[4] = -1;
+        args[5] = 0;
+
+        uintptr_t bss_map = remote_call(pid, &call_regs, (uintptr_t)mmap_addr, libc_return_addr, args, 6);
+        if (!bss_map || bss_map == (uintptr_t)MAP_FAILED) {
+          LOGE("remote mmap bss segment failed for phdr %d", i);
+
+          call_regs = regs_saved;
+
+          args[0] = remote_fd;
+
+          call_regs = regs_saved;
+          remote_call(pid, &call_regs, (uintptr_t)close_addr, libc_return_addr, args, 1);
+          free(phdr);
+          close(fd);
+
+          return false;
+        }
       }
     } else {
       off_t seg_offset = (off_t)phdr[i].p_offset;
